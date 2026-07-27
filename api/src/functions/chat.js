@@ -1,99 +1,50 @@
-const { app } = require("@azure/functions");
-const { AzureOpenAI } = require("openai");
+import OpenAI from "openai";
 
-app.http("chat", {
-    methods: ["POST"],
-    authLevel: "anonymous",
-
-    handler: async (request, context) => {
-
-        try {
-
-            const body = await request.json();
-
-            const { message, systemPrompt } = body;
-
-            if (!message) {
-
-                return {
-                    status: 400,
-                    jsonBody: {
-                        reply: "Message cannot be empty."
-                    }
-                };
-
-            }
-
-            const client = new AzureOpenAI({
-
-                endpoint: process.env.AZURE_OPENAI_ENDPOINT,
-
-                apiKey: process.env.AZURE_OPENAI_KEY,
-
-                apiVersion: process.env.AZURE_OPENAI_API_VERSION,
-
-                deployment: process.env.AZURE_OPENAI_DEPLOYMENT
-
-            });
-
-            const completion = await client.chat.completions.create({
-
-                model: process.env.AZURE_OPENAI_DEPLOYMENT,
-
-                messages: [
-
-                    {
-                        role: "system",
-                        content: systemPrompt
-                    },
-
-                    {
-                        role: "user",
-                        content: message
-                    }
-
-                ],
-
-                temperature: 0.7,
-
-                max_tokens: 400
-
-            });
-
-            return {
-
-                status: 200,
-
-                jsonBody: {
-
-                    reply: completion.choices[0].message.content
-
-                }
-
-            };
-
-        }
-
-        catch (err) {
-
-            context.error(err);
-
-            return {
-
-                status: 500,
-
-                jsonBody: {
-
-                    reply: "Azure OpenAI Error",
-
-                    error: err.message
-
-                }
-
-            };
-
-        }
-
-    }
-
+const client = new OpenAI({
+  apiKey: process.env.AZURE_OPENAI_KEY,
+  baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}/openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT}`,
+  defaultQuery: {
+    "api-version": process.env.AZURE_OPENAI_API_VERSION,
+  },
+  defaultHeaders: {
+    "api-key": process.env.AZURE_OPENAI_KEY,
+  },
 });
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      error: "Method Not Allowed",
+    });
+  }
+
+  try {
+    const { message, systemPrompt } = req.body;
+
+    const response = await client.chat.completions.create({
+      model: process.env.AZURE_OPENAI_DEPLOYMENT,
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt,
+        },
+        {
+          role: "user",
+          content: message,
+        },
+      ],
+      max_tokens: 300,
+      temperature: 0.7,
+    });
+
+    return res.status(200).json({
+      reply: response.choices[0].message.content,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      error: error.message,
+    });
+  }
+}
